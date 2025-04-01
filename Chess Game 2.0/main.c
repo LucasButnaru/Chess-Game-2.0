@@ -139,6 +139,13 @@ void promote_pawn(int x, int y) {
 
 void move_piece(int x1, int y1, int x2, int y2) {
     char piece = board[y1][x1];
+    char captured = board[y2][x2];
+
+    // Handle capture
+    if (captured != '.') {
+        printf("Captured %c!\n", captured);
+    }
+
     board[y2][x2] = piece;
     board[y1][x1] = '.';
 
@@ -146,6 +153,7 @@ void move_piece(int x1, int y1, int x2, int y2) {
         promote_pawn(x2, y2);
     }
 }
+
 
 int main() {
     initialize_board();
