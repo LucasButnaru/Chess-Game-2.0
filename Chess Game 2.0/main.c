@@ -25,15 +25,17 @@ void initialize_board() {
 }
 
 void print_board() {
-    printf("\n  a b c d e f g h\n");
+    printf("\n    a b c d e f g h\n");
+    printf("\n");
     for (int i = 0; i < SIZE; i++) {
-        printf("%d ", 8 - i);
+        printf("%d   ", 8 - i);
         for (int j = 0; j < SIZE; j++) {
             printf("%c ", board[i][j]);
         }
-        printf("%d\n", 8 - i);
+        printf("  %d\n", 8 - i);
     }
-    printf("  a b c d e f g h\n");
+    printf("\n");
+    printf("    a b c d e f g h\n");
 }
 
 bool parse_position(char* pos, int* x, int* y) {
@@ -129,12 +131,16 @@ bool is_valid_move(int x1, int y1, int x2, int y2, char player) {
 
 void promote_pawn(int x, int y) {
     char piece;
-    printf("Promote pawn to (Q/R/B/N): ");
-    scanf(" %c", &piece);
-    piece = toupper(piece);
+    do {
+        printf("Promote pawn to (Q/R/B/N): ");
+        scanf(" %c", &piece); // Space before %c to skip whitespace
+        piece = toupper(piece);
+        if (current_player == 'B') {
+            piece = tolower(piece);
+        }
+    } while (strchr("QRBNqrbn", piece) == NULL);
 
-    if (current_player == 'B') piece = tolower(piece);
-    if (strchr("QRBNqrbn", piece)) board[y][x] = piece;
+    board[y][x] = piece;
 }
 
 void move_piece(int x1, int y1, int x2, int y2) {
