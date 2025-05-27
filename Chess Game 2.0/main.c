@@ -7,148 +7,298 @@
 #include <string.h>
 
 #define SIZE 8
-// Core game functions
-void initialize_board(void);
-void print_board(void);
-void move_piece(int x1, int y1, int x2, int y2);
-void promote_pawn(int x, int y);
+#define POWER_UP_COUNT 5
 
-// Validation functions
-bool parse_position(char* pos, int* x, int* y);
-bool is_path_clear(int x1, int y1, int x2, int y2);
-bool is_valid_move(int x1, int y1, int x2, int y2, char player);
-bool is_checkmate(char player);
-void find_king(char player, int* x, int* y);
-bool is_square_under_attack(int x, int y, char player);
+typedef enum {
+    TELEPORTATION,
+    DOUBLE_MOVE,
+    SWAP_PIECES,
+    SHIELD,
+    MOVE_BOOST
+} PowerUp;
 
-// Piece-specific validation
-bool is_valid_pawn_move(int x1, int y1, int x2, int y2, char player);
-bool is_valid_knight_move(int x1, int y1, int x2, int y2);
-bool is_valid_bishop_move(int x1, int y1, int x2, int y2);
-bool is_valid_rook_move(int x1, int y1, int x2, int y2);
-bool is_valid_queen_move(int x1, int y1, int x2, int y2);
-bool is_valid_king_move(int x1, int y1, int x2, int y2);
 
 char board[SIZE][SIZE];
-char current_player = 'W'; // 'W' for white, 'B' for black
+char current_player = 'W';
+int player_powerups[2][POWER_UP_COUNT] = { {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1} };
+
+void initialize_board(void);
+void print_board(void);
+bool parse_position(char* pos, int* x, int* y);
+bool is_valid_move(int fromX, int fromY, int toX, int toY, char player);
+bool is_checkmate(char player);
+void move_piece(int fromX, int fromY, int toX, int toY);
+void promote_pawn(int x, int y);
+void find_king(char player, int* x, int* y);
+bool is_square_under_attack(int x, int y, char player);
+void power_up_triggered(void);
+void use_teleportation(int fromX, int fromY, int toX, int toY);
+void use_double_move(void);
+void use_swap_pieces(int x1, int y1, int x2, int y2);
+void use_shield(void);
+void use_move_boost(int fromX, int fromY, int toX, int toY);
+
+
 
 void initialize_board() {
     char initial[SIZE][SIZE] = {
-        {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'},
-        {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'.', '.', '.', '.', '.', '.', '.', '.'},
-        {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},
-        {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
+        {'r','n','b','q','k','b','n','r'},
+        {'p','p','p','p','p','p','p','p'},
+        {'.','.','.','.','.','.','.','.'},
+        {'.','.','.','.','.','.','.','.'},
+        {'.','.','.','.','.','.','.','.'},
+        {'.','.','.','.','.','.','.','.'},
+        {'P','P','P','P','P','P','P','P'},
+        {'R','N','B','Q','K','B','N','R'}
     };
     memcpy(board, initial, sizeof(initial));
 }
 
+
 void print_board() {
-    printf("\n    a b c d e f g h\n");
-    printf("\n");
-    for (int i = 0; i < SIZE; i++) {
-        printf("%d   ", 8 - i);
-        for (int j = 0; j < SIZE; j++) {
-            printf("%c ", board[i][j]);
+    printf("\n    a b c d e f g h\n\n");
+    for (int row = 0; row < SIZE; row++) {
+        printf("%d   ", 8 - row);
+        for (int col = 0; col < SIZE; col++) {
+            printf("%c ", board[row][col]);
         }
-        printf("  %d\n", 8 - i);
+        printf("  %d\n", 8 - row);
     }
-    printf("\n");
-    printf("    a b c d e f g h\n");
-    
+    printf("\n    a b c d e f g h\n\n");
 }
+
 
 bool parse_position(char* pos, int* x, int* y) {
-    if (strlen(pos) != 2 || pos[0] < 'a' || pos[0] > 'h' || pos[1] < '1' || pos[1] > '8') {
-        return false;
-    }
-    *x = pos[0] - 'a';
-    *y = 8 - (pos[1] - '0');
+    if (strlen(pos) != 2 || pos[0] < 'a' || pos[0] > 'h' || pos[1] < '1' || pos[1] > '8') return false;
+    *x = pos[0] - 'a'; *y = 8 - (pos[1] - '0');
     return true;
 }
 
-bool is_path_clear(int x1, int y1, int x2, int y2) {
-    int dx = x2 - x1;
-    int dy = y2 - y1;
-    int steps = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
-    int x_inc = dx == 0 ? 0 : (dx > 0 ? 1 : -1);
-    int y_inc = dy == 0 ? 0 : (dy > 0 ? 1 : -1);
 
-    for (int i = 1; i < steps; i++) {
-        int x = x1 + x_inc * i;
-        int y = y1 + y_inc * i;
+bool is_path_clear(int fromX, int fromY, int toX, int toY) {
+    int dx = (toX - fromX) != 0 ? (toX - fromX) / abs(toX - fromX) : 0;
+    int dy = (toY - fromY) != 0 ? (toY - fromY) / abs(toY - fromY) : 0;
+
+    int x = fromX + dx, y = fromY + dy;
+    while (x != toX || y != toY) {
         if (board[y][x] != '.') return false;
+        x += dx;
+        y += dy;
     }
     return true;
 }
 
 
-bool is_valid_pawn_move(int x1, int y1, int x2, int y2, char player) {
-    int dx = x2 - x1;
-    int dy = y2 - y1;
-    char dest = board[y2][x2];
+void activate_power_up(PowerUp power) {
+    int idx = (current_player == 'W') ? 0 : 1;
+    if (player_powerups[idx][power] > 0) {
+        printf("Power-up already available.\n");
+    }
+    else {
+        player_powerups[idx][power] = 1;
+        printf("Power-up added!\n");
+    }
+}
+
+
+void use_teleportation(int fromX, int fromY, int toX, int toY) {
+    int idx = (current_player == 'W') ? 0 : 1;
+    if (player_powerups[idx][TELEPORTATION] <= 0) {
+        printf("No teleportation power-up available!\n");
+        return;
+    }
+    if (board[toY][toX] == '.') {
+        move_piece(fromX, fromY, toX, toY);
+        printf("Teleportation used!\n");
+        player_powerups[idx][TELEPORTATION]--;
+    }
+}
+
+
+void use_double_move(void) {
+    int idx = (current_player == 'W') ? 0 : 1;
+    if (player_powerups[idx][DOUBLE_MOVE] <= 0) {
+        printf("No double move power-up available!\n");
+        return;
+    }
+    printf("Double move activated!\n");
+    player_powerups[idx][DOUBLE_MOVE]--;
+}
+
+
+void use_swap_pieces(int x1, int y1, int x2, int y2) {
+    int idx = (current_player == 'W') ? 0 : 1;
+    if (player_powerups[idx][SWAP_PIECES] <= 0) {
+        printf("No swap power-up available!\n");
+        return;
+    }
+    char tmp = board[y1][x1];
+    board[y1][x1] = board[y2][x2];
+    board[y2][x2] = tmp;
+    printf("Pieces swapped!\n");
+    player_powerups[idx][SWAP_PIECES]--;
+}
+
+
+void use_shield(void) {
+    int idx = (current_player == 'W') ? 0 : 1;
+    if (player_powerups[idx][SHIELD] <= 0) {
+        printf("No shield power-up available!\n");
+        return;
+    }
+    printf("Shield activated! Your king cannot be checked this turn.\n");
+    player_powerups[idx][SHIELD]--;
+}
+
+
+void use_move_boost(int fromX, int fromY, int toX, int toY) {
+    int idx = (current_player == 'W') ? 0 : 1;
+    if (player_powerups[idx][MOVE_BOOST] <= 0) {
+        printf("No move boost power-up available!\n");
+        return;
+    }
+    if (abs(toX - fromX) <= 2 && abs(toY - fromY) <= 2) {
+        move_piece(fromX, fromY, toX, toY);
+        printf("Move boost activated!\n");
+        player_powerups[idx][MOVE_BOOST]--;
+    }
+    else {
+        printf("Move too far for boosted move!\n");
+    }
+}
+
+
+void power_up_triggered() {
+    int choice;
+    printf("Choose a power-up to activate:\n");
+    printf("1: Teleportation\n2: Double Move\n3: Swap Pieces\n4: Shield\n5: Move Boost\n");
+    scanf("%d", &choice);
+
+    char from[3], to[3];
+    int fromX, fromY, toX, toY;
+
+    switch (choice) {
+    case 1:
+        printf("Enter source and destination (e.g., e2 e4): ");
+        scanf("%2s %2s", from, to);
+        if (parse_position(from, &fromX, &fromY) && parse_position(to, &toX, &toY))
+            use_teleportation(fromX, fromY, toX, toY);
+        else
+            printf("Invalid positions!\n");
+        break;
+    case 2:
+        use_double_move();
+        printf("Enter two moves (e.g., e2 e4 e7 e5): ");
+        scanf("%2s %2s %2s %2s", from, to, from + 2, to + 2);
+        if (parse_position(from, &fromX, &fromY) && parse_position(to, &toX, &toY) &&
+            is_valid_move(fromX, fromY, toX, toY, current_player)) {
+            move_piece(fromX, fromY, toX, toY);
+            print_board();
+        }
+        else {
+            printf("First move invalid!\n");
+            break;
+        }
+        if (parse_position(from + 2, &fromX, &fromY) && parse_position(to + 2, &toX, &toY) &&
+            is_valid_move(fromX, fromY, toX, toY, current_player)) {
+            move_piece(fromX, fromY, toX, toY);
+            print_board();
+        }
+        else {
+            printf("Second move invalid!\n");
+        }
+        break;
+    case 3:
+        printf("Enter two positions to swap (e.g., b1 g8): ");
+        scanf("%2s %2s", from, to);
+        if (parse_position(from, &fromX, &fromY) && parse_position(to, &toX, &toY))
+            use_swap_pieces(fromX, fromY, toX, toY);
+        else
+            printf("Invalid positions!\n");
+        break;
+    case 4:
+        use_shield();
+        break;
+    case 5:
+        printf("Enter boosted move (e.g., e2 e4): ");
+        scanf("%2s %2s", from, to);
+        if (parse_position(from, &fromX, &fromY) && parse_position(to, &toX, &toY))
+            use_move_boost(fromX, fromY, toX, toY);
+        else
+            printf("Invalid positions!\n");
+        break;
+    default:
+        printf("Invalid option!\n");
+        break;
+    }
+}
+
+
+bool is_valid_pawn_move(int fromX, int fromY, int toX, int toY, char player) {
+    int dx = toX - fromX;
+    int dy = toY - fromY;
+    char dest = board[toY][toX];
 
     if (player == 'W') {
-        if (dx == 0 && dest == '.' && dy == -1) return true;
-        if (y1 == 6 && dx == 0 && dy == -2 && dest == '.' && board[y1 - 1][x1] == '.') return true;
+        if (dx == 0 && dy == -1 && dest == '.') return true;
+        if (fromY == 6 && dx == 0 && dy == -2 && dest == '.' && board[fromY - 1][fromX] == '.') return true;
         if (abs(dx) == 1 && dy == -1 && dest != '.' && islower(dest)) return true;
     }
     else {
-        if (dx == 0 && dest == '.' && dy == 1) return true;
-        if (y1 == 1 && dx == 0 && dy == 2 && dest == '.' && board[y1 + 1][x1] == '.') return true;
+        if (dx == 0 && dy == 1 && dest == '.') return true;
+        if (fromY == 1 && dx == 0 && dy == 2 && dest == '.' && board[fromY + 1][fromX] == '.') return true;
         if (abs(dx) == 1 && dy == 1 && dest != '.' && isupper(dest)) return true;
     }
     return false;
 }
 
-bool is_valid_knight_move(int x1, int y1, int x2, int y2) {
-    int dx = abs(x2 - x1);
-    int dy = abs(y2 - y1);
+
+bool is_valid_knight_move(int fromX, int fromY, int toX, int toY) {
+    int dx = abs(toX - fromX), dy = abs(toY - fromY);
     return (dx == 2 && dy == 1) || (dx == 1 && dy == 2);
 }
 
-bool is_valid_bishop_move(int x1, int y1, int x2, int y2) {
-    if (abs(x2 - x1) != abs(y2 - y1)) return false;
-    return is_path_clear(x1, y1, x2, y2);
+
+bool is_valid_bishop_move(int fromX, int fromY, int toX, int toY) {
+    return abs(toX - fromX) == abs(toY - fromY) && is_path_clear(fromX, fromY, toX, toY);
 }
 
-bool is_valid_rook_move(int x1, int y1, int x2, int y2) {
-    if (x1 != x2 && y1 != y2) return false;
-    return is_path_clear(x1, y1, x2, y2);
+
+bool is_valid_rook_move(int fromX, int fromY, int toX, int toY) {
+    return (fromX == toX || fromY == toY) && is_path_clear(fromX, fromY, toX, toY);
 }
 
-bool is_valid_queen_move(int x1, int y1, int x2, int y2) {
-    return is_valid_rook_move(x1, y1, x2, y2) || is_valid_bishop_move(x1, y1, x2, y2);
+
+bool is_valid_queen_move(int fromX, int fromY, int toX, int toY) {
+    return is_valid_rook_move(fromX, fromY, toX, toY) || is_valid_bishop_move(fromX, fromY, toX, toY);
 }
 
-bool is_valid_king_move(int x1, int y1, int x2, int y2) {
-    int dx = abs(x2 - x1);
-    int dy = abs(y2 - y1);
-    return dx <= 1 && dy <= 1;
+
+bool is_valid_king_move(int fromX, int fromY, int toX, int toY) {
+    return abs(toX - fromX) <= 1 && abs(toY - fromY) <= 1;
 }
+
 
 void find_king(char player, int* x, int* y) {
     char king = (player == 'W') ? 'K' : 'k';
-    for (int i = 0; i < SIZE; i++) {
-        for (int j = 0; j < SIZE; j++) {
-            if (board[i][j] == king) {
-                *x = j;
-                *y = i;
+    for (int row = 0; row < SIZE; row++) {
+        for (int col = 0; col < SIZE; col++) {
+            if (board[row][col] == king) {
+                *x = col;
+                *y = row;
                 return;
             }
         }
     }
-    *x = *y = -1; // King not found (invalid state)
+    *x = *y = -1;
 }
+
 
 bool is_square_under_attack(int x, int y, char player) {
     char opponent = (player == 'W') ? 'B' : 'W';
-    for (int y1 = 0; y1 < SIZE; y1++) {
-        for (int x1 = 0; x1 < SIZE; x1++) {
-            if (is_valid_move(x1, y1, x, y, opponent)) {
+    for (int row = 0; row < SIZE; row++) {
+        for (int col = 0; col < SIZE; col++) {
+            if (is_valid_move(col, row, x, y, opponent)) {
                 return true;
             }
         }
@@ -157,69 +307,60 @@ bool is_square_under_attack(int x, int y, char player) {
 }
 
 
+bool is_valid_move(int fromX, int fromY, int toX, int toY, char player) {
+    if (fromX < 0 || fromX >= SIZE || fromY < 0 || fromY >= SIZE ||
+        toX < 0 || toX >= SIZE || toY < 0 || toY >= SIZE) return false;
 
-
-bool is_valid_move(int x1, int y1, int x2, int y2, char player) {
-    if (x1 < 0 || x1 >= SIZE || y1 < 0 || y1 >= SIZE ||
-        x2 < 0 || x2 >= SIZE || y2 < 0 || y2 >= SIZE) return false;
-
-    char piece = board[y1][x1];
+    char piece = board[fromY][fromX];
     if (piece == '.' || (player == 'W' && islower(piece)) || (player == 'B' && isupper(piece)))
         return false;
 
-    char dest = board[y2][x2];
-    if (dest != '.' && ((player == 'W' && !islower(dest)) || (player == 'B' && !isupper(dest))))
+    char dest = board[toY][toX];
+    if (dest != '.' && ((player == 'W' && isupper(dest)) || (player == 'B' && islower(dest))))
         return false;
 
+    bool valid = false;
     switch (tolower(piece)) {
-    case 'p': return is_valid_pawn_move(x1, y1, x2, y2, player);
-    case 'n': return is_valid_knight_move(x1, y1, x2, y2);
-    case 'b': return is_valid_bishop_move(x1, y1, x2, y2);
-    case 'r': return is_valid_rook_move(x1, y1, x2, y2);
-    case 'q': return is_valid_queen_move(x1, y1, x2, y2);
-    case 'k': return is_valid_king_move(x1, y1, x2, y2);
-    default: return false;
+    case 'p': valid = is_valid_pawn_move(fromX, fromY, toX, toY, player); break;
+    case 'n': valid = is_valid_knight_move(fromX, fromY, toX, toY); break;
+    case 'b': valid = is_valid_bishop_move(fromX, fromY, toX, toY); break;
+    case 'r': valid = is_valid_rook_move(fromX, fromY, toX, toY); break;
+    case 'q': valid = is_valid_queen_move(fromX, fromY, toX, toY); break;
+    case 'k': valid = is_valid_king_move(fromX, fromY, toX, toY); break;
     }
 
-    char original = board[y1][x1];
-    char dest_piece = board[y2][x2];
-    board[y2][x2] = original;
-    board[y1][x1] = '.';
+    if (!valid) return false;
 
-    int king_x, king_y;
-    find_king(player, &king_x, &king_y);
-    bool in_check = is_square_under_attack(king_x, king_y, player);
+    // Simulate move
+    char tmp_from = board[fromY][fromX];
+    char tmp_to = board[toY][toX];
+    board[toY][toX] = tmp_from;
+    board[fromY][fromX] = '.';
 
-    // Undo simulation
-    board[y1][x1] = original;
-    board[y2][x2] = dest_piece;
+    int kingX, kingY;
+    find_king(player, &kingX, &kingY);
+    bool in_check = is_square_under_attack(kingX, kingY, player);
+
+    board[fromY][fromX] = tmp_from;
+    board[toY][toX] = tmp_to;
 
     return !in_check;
-
-
 }
 
-bool is_checkmate(char player) {
-    int king_x, king_y;
-    find_king(player, &king_x, &king_y);
-    if (!is_square_under_attack(king_x, king_y, player)) return false;
 
-    for (int y1 = 0; y1 < SIZE; y1++) {
-        for (int x1 = 0; x1 < SIZE; x1++) {
-            char piece = board[y1][x1];
+bool is_checkmate(char player) {
+    int kingX, kingY;
+    find_king(player, &kingX, &kingY);
+    if (!is_square_under_attack(kingX, kingY, player)) return false;
+
+    for (int fromY = 0; fromY < SIZE; fromY++) {
+        for (int fromX = 0; fromX < SIZE; fromX++) {
+            char piece = board[fromY][fromX];
             if ((player == 'W' && isupper(piece)) || (player == 'B' && islower(piece))) {
-                for (int y2 = 0; y2 < SIZE; y2++) {
-                    for (int x2 = 0; x2 < SIZE; x2++) {
-                        if (is_valid_move(x1, y1, x2, y2, player)) {
-                            // Simulate move
-                            char orig = board[y1][x1];
-                            char dest = board[y2][x2];
-                            board[y2][x2] = orig;
-                            board[y1][x1] = '.';
-                            bool still_in_check = is_square_under_attack(king_x, king_y, player);
-                            board[y1][x1] = orig;
-                            board[y2][x2] = dest;
-                            if (!still_in_check) return false;
+                for (int toY = 0; toY < SIZE; toY++) {
+                    for (int toX = 0; toX < SIZE; toX++) {
+                        if (is_valid_move(fromX, fromY, toX, toY, player)) {
+                            return false;
                         }
                     }
                 }
@@ -230,36 +371,34 @@ bool is_checkmate(char player) {
 }
 
 
-
-
 void promote_pawn(int x, int y) {
     char piece;
     do {
         printf("Promote pawn to (Q/R/B/N): ");
-        scanf(" %c", &piece); // Space before %c to skip whitespace
-        piece = toupper(piece);
-        if (current_player == 'B') {
-            piece = tolower(piece);
-        }
+        scanf(" %c", &piece);
+        piece = (current_player == 'W') ? toupper(piece) : tolower(piece);
     } while (strchr("QRBNqrbn", piece) == NULL);
-
     board[y][x] = piece;
 }
 
-void move_piece(int x1, int y1, int x2, int y2) {
-    char piece = board[y1][x1];
-    char captured = board[y2][x2];
 
-    // Handle capture
+void move_piece(int fromX, int fromY, int toX, int toY) {
+    char piece = board[fromY][fromX];
+    char captured = board[toY][toX];
     if (captured != '.') {
         printf("Captured %c!\n", captured);
     }
-
-    board[y2][x2] = piece;
-    board[y1][x1] = '.';
-
-    if (tolower(piece) == 'p' && ((current_player == 'W' && y2 == 0) || (current_player == 'B' && y2 == 7))) {
-        promote_pawn(x2, y2);
+    board[toY][toX] = piece;
+    board[fromY][fromX] = '.';
+    if (tolower(piece) == 'p' &&
+        ((current_player == 'W' && toY == 0) || (current_player == 'B' && toY == 7))) {
+        char promotion;
+        do {
+            printf("Promote pawn to (Q/R/B/N): ");
+            scanf(" %c", &promotion);
+            promotion = (current_player == 'W') ? toupper(promotion) : tolower(promotion);
+        } while (strchr("QRBNqrbn", promotion) == NULL);
+        board[toY][toX] = promotion;
     }
 }
 
@@ -267,27 +406,26 @@ void move_piece(int x1, int y1, int x2, int y2) {
 int main() {
     initialize_board();
     print_board();
-
     char from[3], to[3];
     while (1) {
-        printf("%s's turn. Enter move (from to) or 'q' to quit: ", current_player == 'W' ? "White" : "Black");
+        printf("%s's turn. Enter move (from to), 'q' to quit, or 'p' for power-up: ", current_player == 'W' ? "White" : "Black");
         if (scanf("%2s", from) != 1 || from[0] == 'q') break;
-        if (scanf("%2s", to) != 1) break;
-
-        int x1, y1, x2, y2;
-        if (!parse_position(from, &x1, &y1) || !parse_position(to, &x2, &y2)) {
-            printf("Invalid positions!\n");
+        if (from[0] == 'p') {
+            power_up_triggered();
             continue;
         }
-
-        if (is_valid_move(x1, y1, x2, y2, current_player)) {
-            move_piece(x1, y1, x2, y2);
+        if (scanf("%2s", to) != 1) break;
+        int fromX, fromY, toX, toY;
+        if (!parse_position(from, &fromX, &fromY) || !parse_position(to, &toX, &toY)) {
+            printf("Invalid input!\n"); continue;
+        }
+        if (is_valid_move(fromX, fromY, toX, toY, current_player)) {
+            move_piece(fromX, fromY, toX, toY);
             print_board();
-
             char opponent = (current_player == 'W') ? 'B' : 'W';
-            int king_x, king_y;
-            find_king(opponent, &king_x, &king_y);
-            if (is_square_under_attack(king_x, king_y, opponent)) {
+            int kingX, kingY;
+            find_king(opponent, &kingX, &kingY);
+            if (is_square_under_attack(kingX, kingY, opponent)) {
                 if (is_checkmate(opponent)) {
                     printf("Checkmate! %s wins!\n", current_player == 'W' ? "White" : "Black");
                     break;
